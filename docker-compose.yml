@@ -1,0 +1,28 @@
+# docker compose up -d --build
+#
+# 端口默认只绑 127.0.0.1：用 SSH 隧道看控制页，别直接开到公网。
+#   ssh -L 8787:127.0.0.1:8787 user@server   →   浏览器开 http://127.0.0.1:8787
+# 想让别人访问，先配好 BILIDUTY_TOKEN，再把 ports 改成 "8787:8787"（前面加 Nginx/HTTPS 更稳）。
+services:
+  biliduty:
+    build: .
+    image: biliduty:1.0.0
+    container_name: biliduty
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      BILIDUTY_DATA: /data
+      TZ: Asia/Shanghai
+    volumes:
+      # ⚠️ Linux 上 bind mount 的属主要对得上容器里的用户（uid 10001）：
+      #    mkdir -p data && sudo chown -R 10001:10001 data
+      #    （Docker Desktop / macOS 不用管）
+      - ./data:/data
+    ports:
+      - "127.0.0.1:8787:8787"
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"

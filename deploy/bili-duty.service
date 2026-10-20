@@ -1,0 +1,44 @@
+# systemd 单元（不想用 Docker 时）
+#
+#   sudo useradd --system --create-home --home-dir /opt/biliduty --shell /usr/sbin/nologin biliduty
+#   sudo install -d -o biliduty -g biliduty /opt/biliduty /var/lib/biliduty
+#   sudo -u biliduty python3 -m venv /opt/biliduty/.venv
+#   sudo -u biliduty /opt/biliduty/.venv/bin/pip install /path/to/bili_duty
+#   sudo cp deploy/bili-duty.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now bili-duty
+#   journalctl -u bili-duty -f
+#
+# 密钥放 /etc/biliduty/env（权限 600，属主 biliduty）：
+#   DEEPSEEK_API_KEY=sk-...
+#   BILIDUTY_TOKEN=...
+[Unit]
+Description=bili-duty（刷B站 · 独立常驻服务）
+Documentation=https://github.com/c1overzz/dsh-bili-scroll
+After=network-online.target time-sync.target
+Wants=network-online.target time-sync.target
+
+[Service]
+Type=simple
+User=biliduty
+Group=biliduty
+WorkingDirectory=/opt/biliduty
+Environment=BILIDUTY_DATA=/var/lib/biliduty
+Environment=PYTHONUNBUFFERED=1
+Environment=TZ=Asia/Shanghai
+EnvironmentFile=-/etc/biliduty/env
+ExecStart=/opt/biliduty/.venv/bin/python -m biliduty serve
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+
+# 加固：只让它写自己的数据目录
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/biliduty
+StateDirectory=biliduty
+StateDirectoryMode=0750
+
+[Install]
+WantedBy=multi-user.target

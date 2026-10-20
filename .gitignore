@@ -1,0 +1,27 @@
+# 状态与密钥
+data/
+.env
+*.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# 测试 / 冒烟留下的临时目录
+.test-tmp/
+.smoke/
+.livetest/
+.clitest/
+.servertest/
+test-out.txt
+
+# 二维码（扫完就删）
+qrcode_login.png
+demo/bili_credential.json
+demo/out/

@@ -135,17 +135,35 @@ class RoundTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("### BV1bbbbbbbb2", report_text)
 
         seen = st.SeenTable.load(self.data / "seen.md")
-        self.assertEqual(len(seen.videos), 3)
-        self.assertTrue(seen.seen(BV3))
-        self.assertIn("无字幕", next(v.verdict for v in seen.videos if v.bvid == BV3))
+        self.assertEqual(len(seen.videos), 2)
+        self.assertTrue(seen.seen(BV1))
+        # 没字幕的不进判重表：等 B站 生成字幕后下一轮还能重判
+        self.assertFalse(seen.seen(BV3))
 
         digest = (self.data / "digest" / "2026-10.md").read_text(encoding="utf-8")
-        self.assertEqual(digest.count("https://www.bilibili.com/video/"), 3)
-        self.assertIn("跳过（无字幕）", digest)
+        self.assertEqual(digest.count("https://www.bilibili.com/video/"), 2)
+        self.assertNotIn("跳过（无字幕）", digest)
 
         state = json.loads((self.data / "state.json").read_text(encoding="utf-8"))
         self.assertEqual(state["picked"], 1)
         self.assertEqual(bili.replies, [])
+
+    async def test_no_subtitle_is_retried_later(self):
+        """没字幕的不记判重表：B站 生成字幕之后，下一轮还能判到它。"""
+        only = video(BV3, "当时还没字幕")
+        first = await run_round(
+            self.cfg, why="test", bili=FakeBili([only], {}),
+            llm=FakeLLM({BV3: {"worth": True, "score": 90, "why": "好", "one_line": "好"}}), now=NOW,
+        )
+        self.assertEqual(first.picked, [])
+        self.assertEqual(first.no_subtitle, 1)
+        self.assertFalse(st.SeenTable.load(self.data / "seen.md").seen(BV3))
+
+        second = await run_round(
+            self.cfg, why="test", bili=FakeBili([only], {BV3: subtitle()}),
+            llm=FakeLLM({BV3: {"worth": True, "score": 90, "why": "好", "one_line": "好"}}), now=NOW,
+        )
+        self.assertEqual([p["bvid"] for p in second.picked], [BV3])
 
     async def test_quota_is_per_day_not_per_round(self):
         self.cfg = make_config(str(self.data), perDay=1, perRound=3)

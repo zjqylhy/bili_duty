@@ -230,7 +230,7 @@ biliduty --data ./data doctor --llm            # 真调一次模型，确认 key
 | 日志 `ACCOUNT...` / 401 | `DEEPSEEK_API_KEY` 没填或失效：`doctor --llm` 看一眼 |
 | 「没有 B站 凭证」 | 跑 `biliduty login`；二维码 PNG 拉下来用手机 B站 扫，选「记住我」 |
 | 评论发不出去 | 多半是风控或账号权限；`duty.log` 里有原始报错。它不会重试轰炸，下一轮再说 |
-| 报告里「因无字幕跳过 N 条」很多 | 正常：没字幕的会被跳过。要的话开 `transcribe` 并装 `faster-whisper` |
+| 报告里「因无字幕跳过 N 条」很多 | 正常：没字幕的会被跳过，且**不记入判重表** —— B站 的 AI 字幕常常晚几个小时才生成，等它出来下一轮还能重判。要更主动就开 `transcribe` 并装 `faster-whisper` |
 | 窗口不触发 | 看 `status` 的「下次」；确认 `enabledWindows` 非空、`perDay>0`、没超过 `maxRoundsPerDay` |
 | 时间不对 | 容器里 `TZ=Asia/Shanghai` 已设；systemd 单元也设了。窗口一律按 `config.timezone` 算 |
 

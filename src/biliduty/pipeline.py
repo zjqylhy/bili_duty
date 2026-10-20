@@ -172,8 +172,10 @@ async def collect_candidates(
             )
 
     ordered = sorted(found.values(), key=lambda c: (c.pubdate, c.play), reverse=True)
-    cap = int(limit if limit is not None else cfg.get("candidatesPerRound", default=10))
-    return ordered[: max(0, cap)], hits
+    # ⭐ 默认不截断：候选池要够宽，才能把"刚上传、还没字幕"的排掉之后仍留下可读的
+    if limit is None:
+        return ordered, hits
+    return ordered[: max(0, int(limit))], hits
 
 
 async def read_subtitles(cfg: Config, bili: Bili, data_dir: Path, candidates: list[Candidate]) -> None:
@@ -374,12 +376,18 @@ async def run_round(
 
     # ② 读字幕原文 ─────────────────────────────────────────────────────
     await read_subtitles(cfg, bili, data_dir, candidates)
-    result.reviewed = len(candidates)
     result.no_subtitle = sum(1 for c in candidates if not c.subtitle)
+    # ⭐ 只把「读到了字幕」的送进判断：没字幕的这轮等于没看到内容，
+    #    既不该占判断额度，更不能记进判重表 —— B站 的 AI 字幕常常晚几个小时才生成，
+    #    记进去就等于把这条永久划掉（2026-10-21 的教训）。
+    readable = [c for c in candidates if c.subtitle]
+    judge_cap = int(cfg.get("candidatesPerRound", default=10))
+    to_judge = readable[: max(0, judge_cap)]
+    result.reviewed = len(to_judge)
 
     # ③ 模型判断 ───────────────────────────────────────────────────────
     comment_on = _comment_enabled(cfg, seen)
-    verdicts, failed_batches = await judge(cfg, llm, candidates, now, round_cap, comment_on)
+    verdicts, failed_batches = await judge(cfg, llm, to_judge, now, round_cap, comment_on)
     result.llm = llm.usage
     if failed_batches:
         result.errors.append(f"{failed_batches} 批判断失败（模型/网络），这些条目没有判词")
@@ -407,13 +415,12 @@ async def run_round(
     result.picked = picks
 
     # ④ 判重表先落一步：哪怕后面崩了，"这些看过了"也得留下 ───────────────
+    #    ⚠️ 只记「真正判过」的；没字幕的与超额的都不记 —— 下一轮还能重判
     if not dry_run:
-        for candidate in candidates:
+        for candidate in to_judge:
             verdict = verdicts.get(candidate.bvid)
             if verdict and verdict.worth and candidate.bvid in {p["bvid"] for p in picks}:
                 mark = "挑中"
-            elif not candidate.subtitle:
-                mark = f"跳过（{_empty_reason(candidate.empty)}）"
             else:
                 mark = f"跳过（{verdict.skip_reason or verdict.one_line or '不值得'}）" if verdict else "跳过（未判断）"
             seen.add_video(now, candidate.bvid, candidate.title, candidate.author, mark)
@@ -461,17 +468,14 @@ async def run_round(
                 )
             else:
                 body = "这一轮没有挑中新的（都看过了或不值得）。\n\n"
-        st.append_text(target, body + report.footer(len(candidates), len(picks), result.no_subtitle, now))
+        st.append_text(target, body + report.footer(len(to_judge), len(picks), result.no_subtitle, now))
         result.report_file = str(target)
 
     digest_lines = []
     picked_ids = {p["bvid"] for p in picks}
-    for candidate in candidates:
+    for candidate in to_judge:
         verdict = verdicts.get(candidate.bvid)
         data = dict(vars(verdict)) if verdict else {}
-        if not candidate.subtitle:
-            # 没字幕是这一条被判掉的直接原因，归档里要说清楚（别让人以为"没内容"）
-            data["skip_reason"] = _empty_reason(candidate.empty)
         digest_lines.append(report.digest_line(now, {
             "bvid": candidate.bvid, "title": candidate.title, "author": candidate.author,
         }, data, candidate.bvid in picked_ids))
@@ -493,7 +497,7 @@ async def run_round(
 
     # ⑧ 记账 ───────────────────────────────────────────────────────────
     result.quota_left = max(0, remaining - len(picks))
-    result.summary = report.one_line_summary(len(picks), len(candidates), result.no_subtitle, len(result.comments))
+    result.summary = report.one_line_summary(len(picks), len(to_judge), result.no_subtitle, len(result.comments))
     result.duration_s = time.monotonic() - started
 
     if not dry_run:
@@ -507,14 +511,3 @@ async def run_round(
 
     log.info("这一轮结束：%s", result.summary)
     return result
-
-
-def _empty_reason(code: str) -> str:
-    if code.startswith("error"):
-        return "读不到（接口报错）"
-    return {
-        "no_subtitle": "无字幕",
-        "no_voice": "无语音",
-        "no_cid": "拿不到 cid",
-        "no_subtitle_and_transcribe_failed": "无字幕、转写没成",
-    }.get(code, code or "读不到内容")

@@ -165,6 +165,27 @@ class RoundTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual([p["bvid"] for p in second.picked], [BV3])
 
+    async def test_too_fresh_videos_are_skipped(self):
+        """发布不满 minAgeHours 的先不看：给 B站 生成 AI 字幕留时间。"""
+        fresh = video(BV1, "刚上传的")
+        fresh["pubdate"] = int((NOW - timedelta(hours=1)).timestamp())
+        result = await run_round(
+            self.cfg, why="test", bili=FakeBili([fresh], {}), llm=FakeLLM({}), now=NOW,
+        )
+        self.assertEqual(result.candidates, 0)
+        self.assertEqual(result.reviewed, 0)
+
+    async def test_candidate_pool_is_capped(self):
+        """候选池按 candidatePool 封顶：不要一轮读几百条字幕。"""
+        self.cfg = make_config(str(self.data), candidatePool=2, candidatesPerRound=10)
+        vids = [video(f"BV1aaaaaaaa{i}", f"视频{i}") for i in range(6)]
+        subs = {v["bvid"]: subtitle() for v in vids}
+        result = await run_round(
+            self.cfg, why="test", bili=FakeBili(vids, subs), llm=FakeLLM({}), now=NOW,
+        )
+        self.assertEqual(result.candidates, 2)
+        self.assertEqual(result.reviewed, 2)
+
     async def test_quota_is_per_day_not_per_round(self):
         self.cfg = make_config(str(self.data), perDay=1, perRound=3)
         bili = FakeBili([video(BV1, "A"), video(BV2, "B")], {BV1: subtitle(), BV2: subtitle()})

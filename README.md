@@ -110,8 +110,11 @@ sudo systemctl start bili-duty && journalctl -u bili-duty -f
 | `keywords` | DSH 相关的五组 | 关注关键词，一行一个 |
 | `perDay` / `perRound` | `5` / `3` | 每天挑几条（全天总量）/ 单轮最多挑几条 |
 | `minScore` | `60` | 模型打分低于它就不挑 |
-| `candidatesPerRound` | `10` | 一轮读几条字幕 —— **这就是你的成本闸门** |
-| `searchDays` | `7` | 只看最近几天发布的 |
+| `candidatesPerRound` | `10` | 一轮**送模型判断**几条 —— 成本闸门 |
+| `candidatePool` | `60` | 一轮最多读多少条候选的字幕（每条 1~2 秒） |
+| `searchDays` | `7` | 只看最近几天发布的（按发布时间） |
+| `searchPerKeyword` | `12` | 每个关键词搜多少条（**会翻页**） |
+| `minAgeHours` | `12` | 发布不满这么多小时的先不看 —— 等 B站 生成 AI 字幕 |
 | `enabledWindows` | `["noon","night"]` | 自动跑哪几档（北京时间） |
 | `windows` | noon 12–14 / night 18–09 / weekend 09–23 | 窗口可以跨零点 |
 | `weekendWindow` | `true` | 周六日额外允许白天跑一档 |

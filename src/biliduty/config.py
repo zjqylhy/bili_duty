@@ -31,6 +31,10 @@ DEFAULTS: dict[str, Any] = {
     # 只看最近几天发布的（搜索接口不带时间过滤，本地按 pubdate 筛）
     "searchDays": 7,
     "searchPerKeyword": 12,
+    # 发布不满这么多小时的先不看：B站 的 AI 字幕常常晚几个小时才生成
+    "minAgeHours": 12,
+    # 一轮最多把多少条候选送进"读字幕"（每条 1~2 秒，池子太大会拖很久）
+    "candidatePool": 60,
     # pubdate=最新 / click=播放 / totalrank=综合
     "searchOrder": "pubdate",
     # 一轮最多读多少条字幕（每条都要花钱，这个数是成本闸门）

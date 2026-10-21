@@ -129,38 +129,58 @@ class Bili:
 
     # ── 搜索 ────────────────────────────────────────────────────────────
     async def search(self, keyword: str, num: int = 12, order: str = "pubdate") -> list[dict]:
-        order_enum = _ORDER.get(str(order), search.OrderVideo.PUBDATE)
-        last_error: Exception | None = None
-        for attempt in range(3):
-            try:
-                result = self._unwrap(await search.search_by_type(
-                    keyword=keyword,
-                    search_type=search.SearchObjectType.VIDEO,
-                    page=1,
-                    order_type=order_enum,
-                ))
-                break
-            except Exception as exc:  # 风控 / 网络抖动：重试两次，别把整轮拖垮
-                last_error = exc
-                await asyncio.sleep(1.5 * (attempt + 1))
-        else:
-            raise BiliError(f"搜索「{keyword}」失败：{last_error}")
+        """按排序取前 ``num`` 条 —— **会翻页**（每页约 20 条）。
 
-        videos: list[dict] = []
-        for item in (result.get("result") or [])[: max(1, int(num))]:
-            title = re.sub(r"<[^>]+>", "", str(item.get("title") or "")).strip()
-            videos.append({
-                "bvid": item.get("bvid") or "",
-                "title": title,
-                "author": item.get("author") or "",
-                "play": int(item.get("play") or 0),
-                "review": int(item.get("review") or 0),
-                "duration": str(item.get("duration") or ""),
-                "pubdate": int(item.get("pubdate") or item.get("senddate") or 0),
-                "description": str(item.get("description") or "")[:200],
-            })
-        await self._sleep("search")
-        return [v for v in videos if v["bvid"]]
+        以前只请求 page=1，`num` 再大也拿不到第二页，于是「最近 7 天」的窗口
+        实际只覆盖了一两天，池子里全是最新上传、还没生成字幕的视频。
+        """
+        order_enum = _ORDER.get(str(order), search.OrderVideo.PUBDATE)
+        target = max(1, int(num))
+        collected: list[dict] = []
+        seen_bvids: set[str] = set()
+        page = 1
+        last_error: Exception | None = None
+        while len(collected) < target and page <= 5:
+            result: dict | None = None
+            for attempt in range(3):
+                try:
+                    result = self._unwrap(await search.search_by_type(
+                        keyword=keyword,
+                        search_type=search.SearchObjectType.VIDEO,
+                        page=page,
+                        order_type=order_enum,
+                    ))
+                    break
+                except Exception as exc:  # 风控 / 网络抖动：重试两次，别把整轮拖垮
+                    last_error = exc
+                    await asyncio.sleep(1.5 * (attempt + 1))
+            if result is None:
+                if collected:
+                    break
+                raise BiliError(f"搜索「{keyword}」失败：{last_error}")
+
+            items = result.get("result") or []
+            if not items:
+                break
+            for item in items:
+                bvid = item.get("bvid") or ""
+                if not bvid or bvid in seen_bvids:
+                    continue
+                seen_bvids.add(bvid)
+                title = re.sub(r"<[^>]+>", "", str(item.get("title") or "")).strip()
+                collected.append({
+                    "bvid": bvid,
+                    "title": title,
+                    "author": item.get("author") or "",
+                    "play": int(item.get("play") or 0),
+                    "review": int(item.get("review") or 0),
+                    "duration": str(item.get("duration") or ""),
+                    "pubdate": int(item.get("pubdate") or item.get("senddate") or 0),
+                    "description": str(item.get("description") or "")[:200],
+                })
+            await self._sleep("search")
+            page += 1
+        return collected[:target]
 
     # ── 视频信息 ────────────────────────────────────────────────────────
     async def video_info(self, bvid: str) -> dict:

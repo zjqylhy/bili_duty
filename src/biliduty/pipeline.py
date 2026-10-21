@@ -142,8 +142,11 @@ async def collect_candidates(
     tz = cfg.tz()
     days = int(cfg.get("searchDays", default=7))
     per_keyword = int(cfg.get("searchPerKeyword", default=12))
+    min_age_hours = float(cfg.get("minAgeHours", default=12) or 0)
     order = str(cfg.get("searchOrder", default="pubdate"))
     cutoff = (now.timestamp() - days * 86400) if days > 0 else 0
+    # 太新的先不看：B站 的 AI 字幕常常要几个小时才生成，刚上传的放进池子只会白读
+    freshest = (now.timestamp() - min_age_hours * 3600) if min_age_hours > 0 else 0
 
     found: dict[str, Candidate] = {}
     hits = 0
@@ -161,6 +164,8 @@ async def collect_candidates(
             pubdate = int(item.get("pubdate") or 0)
             if cutoff and pubdate and pubdate < cutoff:
                 continue
+            if freshest and pubdate and pubdate > freshest:
+                continue
             found[bvid] = Candidate(
                 bvid=bvid,
                 title=item.get("title") or "",
@@ -172,9 +177,9 @@ async def collect_candidates(
             )
 
     ordered = sorted(found.values(), key=lambda c: (c.pubdate, c.play), reverse=True)
-    # ⭐ 默认不截断：候选池要够宽，才能把"刚上传、还没字幕"的排掉之后仍留下可读的
+    # ⭐ 默认按 candidatePool 封顶：每条候选都要读一次字幕，池子太大这一轮会跑很久
     if limit is None:
-        return ordered, hits
+        return ordered[: max(0, int(cfg.get("candidatePool", default=60)))], hits
     return ordered[: max(0, int(limit))], hits
 
 
